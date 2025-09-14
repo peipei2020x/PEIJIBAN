@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Secure Chat Room</title>
+    <style>
+        :root {
+            --b-radius: 8px;
+            --main-bg: #f7f7f7;
+            --container-bg: #ffffff;
+            --msg-bg: #e9e9eb;
+            --input-bg: #f0f0f0;
+            --primary-color: #007aff;
+            --text-color: #000000;
+            --subtext-color: #8e8e93;
+        }
+        html { height: 100%; overflow: hidden; }
+        body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--main-bg); color: var(--text-color); display: flex; flex-direction: column; }
+        .container { width: 100%; max-width: 800px; margin: auto; display: flex; flex-direction: column; height: 100%; background-color: var(--container-bg); }
+        .header { padding: 12px 20px; text-align: center; font-size: 1.1em; font-weight: 600; border-bottom: 1px solid #e0e0e0; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; }
+        #app-body { flex-grow: 1; display: none; flex-direction: column; overflow: hidden; }
+        #messages-container { flex-grow: 1; overflow-y: auto; padding: 16px; }
+        .message-item { margin-bottom: 16px; }
+        .message-header { font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; }
+        .message-header strong { font-weight: 600; margin-right: 8px; }
+        .message-header .user-id { font-size: 12px; color: var(--subtext-color); }
+        .message-body { display: flex; align-items: flex-end; gap: 8px; }
+        .message-text { background-color: var(--msg-bg); padding: 8px 12px; border-radius: 18px; line-height: 1.4; word-wrap: break-word; max-width: 85%; }
+        .message-meta { font-size: 11px; color: var(--subtext-color); flex-shrink: 0; }
+        .delete-btn { background: none; border: none; cursor: pointer; color: #aaa; opacity: 0; transition: opacity 0.2s; padding: 2px; }
+        .message-item:hover .delete-btn { opacity: 1; }
+        .form-area { padding: 12px; border-top: 1px solid #e0e0e0; flex-shrink: 0; }
+        .form-row { display: flex; gap: 10px; margin-bottom: 8px; }
+        input, textarea { width: 100%; box-sizing: border-box; padding: 10px 14px; border: none; border-radius: var(--b-radius); font-size: 15px; background-color: var(--input-bg); color: var(--text-color); }
+        textarea { resize: none; overflow-y: hidden; line-height: 1.4; }
+        button { background-color: var(--primary-color); color: white; border: none; border-radius: 6px; padding: 8px 16px; font-size: 15px; font-weight: bold; cursor: pointer; }
+        button:disabled { background-color: #a6c9f7; cursor: not-allowed; }
+        #auth-container { flex-grow: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 認証エリア (ログイン前) -->
+        <div id="auth-container">
+            <h2>Secure Chat Room</h2>
+            <p>利用するにはGitHubアカウントでログインしてください。</p>
+            <button id="login-btn">GitHubでログイン</button>
+            <p style="font-size: 12px; margin-top: 20px;">
+    ログインをもって、<a href="kiyaku.html" target="_blank">利用ルール</a>に同意したものとみなします。
+            </p>
+        </div>
+        <!-- アプリ本体 (ログイン後) -->
+        <div id="app-body">
+            <header class="header">
+                <span id="user-info"></span>
+                <!-- ★変更点1: 利用者登録ボタンを削除 -->
+                <button id="logout-btn">ログアウト</button>
+            </header>
+            <div id="messages-container"></div>
+            <div class="form-area">
+                <div class="form-row">
+                    <input type="text" id="name" placeholder="名前 (名無しさん)">
+                </div>
+                <div class="form-row">
+                    <textarea id="text" placeholder="メッセージを入力..." rows="1"></textarea>
+                    <button id="send-btn">送信</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase ライブラリ -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+
+    <script>
+        // ▼▼▼▼▼ あなたのFirebase設定コードをここに貼り付け ▼▼▼▼▼
+        const firebaseConfig = {
+    apiKey: "AIzaSyBT9pezvS8N1i8PvDKFU7zpW6YP-OQox2c",
+    authDomain: "pepe-0.firebaseapp.com",
+    projectId: "pepe-0",
+    storageBucket: "pepe-0.firebasestorage.app",
+    messagingSenderId: "597459079664",
+    appId: "1:597459079664:web:085abc2b60b4e6f5aacd35"
+  };
+        // ▲▲▲▲▲ ここまで ▲▲▲▲▲
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        // --- DOM要素 (利用者登録ボタンの行を削除) ---
+        const authContainer = document.getElementById('auth-container');
+        const appBody = document.getElementById('app-body');
+        const loginBtn = document.getElementById('login-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const sendBtn = document.getElementById('send-btn');
+        const userInfo = document.getElementById('user-info');
+        const nameInput = document.getElementById('name');
+        const textInput = document.getElementById('text');
+        const messagesContainer = document.getElementById('messages-container');
+        
+        let currentUser = null;
+        let unsubscribe = null;
+
+        // ★変更点2: 認証処理を改造 ---
+        auth.onAuthStateChanged(async user => {
+            if (user) {
+                currentUser = user;
+                // ログイン成功時に、利用者登録をバックグラウンドで自動的に行う
+                await initializeUserStatus(user.uid);
+
+                authContainer.style.display = 'none';
+                appBody.style.display = 'flex';
+                userInfo.textContent = `ID: ...${user.uid.slice(-4)}`;
+                startMessageListener();
+            } else {
+                currentUser = null;
+                authContainer.style.display = 'flex';
+                appBody.style.display = 'none';
+                if (unsubscribe) unsubscribe();
+            }
+        });
+
+        loginBtn.addEventListener('click', () => {
+            const provider = new firebase.auth.GithubAuthProvider();
+            auth.signInWithPopup(provider).catch(error => console.error("Login Error:", error));
+        });
+
+        logoutBtn.addEventListener('click', () => auth.signOut());
+
+        // ★変更点3: 自動利用者登録のための関数を追加
+        async function initializeUserStatus(uid) {
+            const userStatusRef = db.collection('user_status').doc(uid);
+            const doc = await userStatusRef.get();
+            // もし、まだ利用者情報が存在しない場合のみ、初期化処理を行う
+            if (!doc.exists) {
+                try {
+                    await userStatusRef.set({
+                        lastPostTime: new Date(0), // 1970年1月1日の時刻
+                        messageCount: 0
+                    });
+                } catch (error) {
+                    console.error("利用者情報の初期化に失敗しました:", error);
+                }
+            }
+        }
+
+        // --- メッセージ表示処理 (変更なし) ---
+        function startMessageListener() {
+            if (unsubscribe) unsubscribe();
+            unsubscribe = db.collection('messages').orderBy('timestamp').limitToLast(100)
+                .onSnapshot(snapshot => {
+                    const wasScrolledToBottom = messagesContainer.scrollHeight - messagesContainer.clientHeight <= messagesContainer.scrollTop + 1;
+                    messagesContainer.innerHTML = '';
+                    snapshot.forEach(doc => {
+                        messagesContainer.appendChild(createMessageElement(doc.data(), doc.id));
+                    });
+                    if (wasScrolledToBottom) messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }, error => {
+                    console.error("Firestore Error:", error);
+                    if (error.code === 'permission-denied') {
+                        alert("アクセス権がありません。管理者にホワイトリストへの追加を依頼してください。");
+                        auth.signOut();
+                    }
+                });
+        }
+
+        function createMessageElement(message, docId) {
+            const item = document.createElement('div');
+            item.className = 'message-item';
+            const timeString = message.timestamp ? message.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            const shortId = `...${message.uid.slice(-4)}`;
+            item.innerHTML = `
+                <div>
+                    <div class="message-header">
+                        <strong>${escapeHTML(message.name)}</strong>
+                        <span class="user-id">(ID: ${shortId})</span>
+                    </div>
+                    <div class="message-body">
+                        <div class="message-text">${escapeHTML(message.text)}</div>
+                        <div class="message-meta">
+                            <span>${timeString}</span>
+                            <button class="delete-btn" data-id="${docId}">×</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            const deleteBtn = item.querySelector('.delete-btn');
+            if(deleteBtn) deleteBtn.addEventListener('click', handleDelete);
+            return item;
+        }
+        
+        // ★変更点4: メッセージ送信処理を改造
+        function sendMessage() {
+            const name = nameInput.value.trim() === '' ? '名無しさん' : nameInput.value;
+            const text = textInput.value.trim();
+            if (text === '' || !currentUser) return;
+
+            const messageData = {
+                uid: currentUser.uid,
+                name: name,
+                text: text,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            const userStatusRef = db.collection('user_status').doc(currentUser.uid);
+
+            db.runTransaction(async (transaction) => {
+                const userStatusDoc = await transaction.get(userStatusRef);
+                // ログイン時に初期化されているはずなので、存在チェックはより厳密に
+                if (!userStatusDoc.exists) {
+                    throw new Error("利用者情報が見つかりません。ページを再読み込みするか、管理者に連絡してください。");
+                }
+
+                // 親切なエラー表示のためのクライアントサイドクールダウンチェック
+                const lastPostTime = userStatusDoc.data().lastPostTime.toDate();
+                const now = new Date();
+                const diffSeconds = (now.getTime() - lastPostTime.getTime()) / 1000;
+                if (diffSeconds < 60) {
+                    const waitSeconds = Math.ceil(60 - diffSeconds);
+                    throw new Error(`COOLDOWN:${waitSeconds}`);
+                }
+
+                const currentCount = userStatusDoc.data().messageCount || 0;
+                transaction.set(db.collection('messages').doc(), messageData);
+                transaction.update(userStatusRef, { 
+                    lastPostTime: firebase.firestore.FieldValue.serverTimestamp(),
+                    messageCount: currentCount + 1
+                });
+            }).then(() => {
+                textInput.value = '';
+                autoResizeTextarea();
+                textInput.focus();
+            }).catch(error => {
+                if (error.message.startsWith("COOLDOWN:")) {
+                    const waitSeconds = error.message.split(':')[1];
+                    alert(`連続投稿はできません。あと ${waitSeconds}秒 お待ちください。`);
+                } else {
+                    console.error("送信エラー:", error);
+                    alert(error.message || "送信に失敗しました。時間をおいて再度お試しください。");
+                }
+            });
+        }
+
+        function handleDelete(event) {
+            const idToDelete = event.target.dataset.id;
+            if (confirm('このメッセージを削除しますか？')) {
+                db.collection('messages').doc(idToDelete).delete().catch(error => {
+                    if (error.code === 'permission-denied') {
+                        alert('他の人のメッセージは削除できません。');
+                    } else {
+                        alert('削除に失敗しました。');
+                    }
+                    console.error("削除エラー:", error);
+                });
+            }
+        }
+        
+        // --- イベントリスナーとヘルパー関数 (変更なし) ---
+        sendBtn.addEventListener('click', sendMessage);
+        textInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+        
+        function autoResizeTextarea() {
+            textInput.style.height = 'auto';
+            textInput.style.height = (textInput.scrollHeight) + 'px';
+        }
+        textInput.addEventListener('input', autoResizeTextarea);
+
+        function escapeHTML(str) { return str.replace(/[&<>"']/g, m => ({'&':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
+        
+    </script>
+</body>
+</html>
