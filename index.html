@@ -45,7 +45,6 @@
 </head>
 <body>
     <div class="container">
-        <!-- 認証エリア (ログイン前) -->
         <div id="auth-container">
             <h2>Secure Chat Room</h2>
             <p>利用するにはGitHubアカウントでログインしてください。</p>
@@ -54,11 +53,9 @@
     ログインをもって、<a href="kiyaku.html" target="_blank">利用規約</a>に同意したものとみなします。
             </p>
         </div>
-        <!-- アプリ本体 (ログイン後) -->
         <div id="app-body">
             <header class="header">
                 <span id="user-info"></span>
-                <!-- ★変更点1: 利用者登録ボタンを削除 -->
                 <button id="logout-btn">ログアウト</button>
             </header>
             <div id="messages-container"></div>
@@ -74,13 +71,11 @@
         </div>
     </div>
 
-    <!-- Firebase ライブラリ -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
     <script>
-        // ▼▼▼▼▼ あなたのFirebase設定コードをここに貼り付け ▼▼▼▼▼
         const firebaseConfig = {
     apiKey: "AIzaSyBT9pezvS8N1i8PvDKFU7zpW6YP-OQox2c",
     authDomain: "pepe-0.firebaseapp.com",
@@ -89,13 +84,11 @@
     messagingSenderId: "597459079664",
     appId: "1:597459079664:web:085abc2b60b4e6f5aacd35"
   };
-        // ▲▲▲▲▲ ここまで ▲▲▲▲▲
 
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
 
-        // --- DOM要素 (利用者登録ボタンの行を削除) ---
         const authContainer = document.getElementById('auth-container');
         const appBody = document.getElementById('app-body');
         const loginBtn = document.getElementById('login-btn');
@@ -109,11 +102,9 @@
         let currentUser = null;
         let unsubscribe = null;
 
-        // ★変更点2: 認証処理を改造 ---
         auth.onAuthStateChanged(async user => {
             if (user) {
                 currentUser = user;
-                // ログイン成功時に、利用者登録をバックグラウンドで自動的に行う
                 await initializeUserStatus(user.uid);
 
                 authContainer.style.display = 'none';
@@ -135,11 +126,9 @@
 
         logoutBtn.addEventListener('click', () => auth.signOut());
 
-        // ★変更点3: 自動利用者登録のための関数を追加
         async function initializeUserStatus(uid) {
             const userStatusRef = db.collection('user_status').doc(uid);
             const doc = await userStatusRef.get();
-            // もし、まだ利用者情報が存在しない場合のみ、初期化処理を行う
             if (!doc.exists) {
                 try {
                     await userStatusRef.set({
@@ -152,7 +141,6 @@
             }
         }
 
-        // --- メッセージ表示処理 (変更なし) ---
         function startMessageListener() {
             if (unsubscribe) unsubscribe();
             unsubscribe = db.collection('messages').orderBy('timestamp').limitToLast(100)
@@ -197,7 +185,6 @@
             return item;
         }
         
-        // ★変更点4: メッセージ送信処理を改造
         function sendMessage() {
             const name = nameInput.value.trim() === '' ? '名無しさん' : nameInput.value;
             const text = textInput.value.trim();
@@ -213,12 +200,10 @@
 
             db.runTransaction(async (transaction) => {
                 const userStatusDoc = await transaction.get(userStatusRef);
-                // ログイン時に初期化されているはずなので、存在チェックはより厳密に
                 if (!userStatusDoc.exists) {
                     throw new Error("利用者情報が見つかりません。ページを再読み込みするか、管理者に連絡してください。");
                 }
 
-                // 親切なエラー表示のためのクライアントサイドクールダウンチェック
                 const lastPostTime = userStatusDoc.data().lastPostTime.toDate();
                 const now = new Date();
                 const diffSeconds = (now.getTime() - lastPostTime.getTime()) / 1000;
@@ -262,7 +247,6 @@
             }
         }
         
-        // --- イベントリスナーとヘルパー関数 (変更なし) ---
         sendBtn.addEventListener('click', sendMessage);
         textInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
         
@@ -277,5 +261,6 @@
     </script>
 </body>
 </html>
+
 
 
